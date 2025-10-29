@@ -1,0 +1,56 @@
+# Environment variables
+.env
+
+# Python virtual environment
+telegram_env/
+venv/
+env/
+ENV/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Media files and uploads
+static/uploads/*
+!static/uploads/.gitkeep
+media_files/*
+!media_files/.gitkeep
+downloads/*
+!downloads/.gitkeep
+
+# Message storage
+messages/messages.json
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# VS Code settings
+.vscode/
+
+# Logs
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE specific files
+.idea/
+*.swp
+*.swo
+.project
+.pydevproject
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Local development settings
+*.local
+*.local.*
