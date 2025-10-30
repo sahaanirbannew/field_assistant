@@ -24,6 +24,35 @@ A FastAPI-based web application that bridges Telegram messages with a web interf
 - Telegram Bot Token (from [@BotFather](https://t.me/botfather))
 - Virtual environment (included in repository)
 
+## Dependencies
+
+This project depends on the following Python packages. Install them into your virtual environment before running the app.
+
+Required packages:
+
+```txt
+fastapi            # Web framework
+python-telegram-bot==20.8  # Telegram Bot API wrapper (project tested with 20.8)
+python-dotenv      # Load .env files
+uvicorn            # ASGI server to run FastAPI
+python-multipart   # Needed for handling file uploads
+httpx              # Optional - used by some telegram client components
+```
+
+Install with pip:
+
+```powershell
+# activate your virtualenv first (example for the included environment)
+.\telegram_env\Scripts\Activate.ps1
+pip install fastapi python-telegram-bot==20.8 python-dotenv uvicorn python-multipart httpx
+```
+
+Optional: you can lock dependencies by creating a `requirements.txt`:
+
+```powershell
+pip freeze > requirements.txt
+```
+
 ## Setup
 
 1. Clone the repository
@@ -108,3 +137,9 @@ The application uses FastAPI's auto-reload feature. Any changes to the Python fi
 - Missing environment variables will raise an error
 - Media download failures are logged but won't crash the application
 - JSON parsing errors for message storage will create a fresh message list
+
+
+## Future Implementations
+- A text field in audio messages which will store the transcription
+- Fetch past chat messages from a single server fetch
+- Organizing the data (user-wise)
