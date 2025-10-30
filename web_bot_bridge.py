@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,13 +9,22 @@ from telegram import Bot
 from datetime import datetime
 from typing import Optional
 from contextlib import asynccontextmanager
+import google.generativeai as genai
 
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not BOT_TOKEN:
     raise EnvironmentError("❌ TELEGRAM_BOT_TOKEN not found in .env file")
+
+if not GEMINI_API_KEY:
+    print("⚠️ WARNING: GEMINI_API_KEY not found in .env file. Audio transcription will be disabled.")
+    GEMINI_ENABLED = False
+else:
+    GEMINI_ENABLED = True
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # --- Create directories ---
 os.makedirs("static/uploads", exist_ok=True)
@@ -56,6 +66,36 @@ def save_data(data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 
+async def transcribe_audio(audio_path: str) -> Optional[str]:
+    """Transcribe audio file using Gemini API"""
+    if not GEMINI_ENABLED:
+        return None
+    
+    try:
+        print(f"🎤 Transcribing: {audio_path}")
+        
+        # Upload audio file to Gemini
+        audio_file = genai.upload_file(path=audio_path)
+        
+        # Use Gemini 2.5 Flash for transcription
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        
+        # Request transcription with language auto-detection
+        response = model.generate_content([
+            "Transcribe this audio file. Detect the language automatically and provide only the transcription text without any additional commentary.",
+            audio_file
+        ])
+        
+        transcription = response.text.strip()
+        print(f"✅ Transcription complete: {transcription[:50]}...")
+        
+        return transcription
+    
+    except Exception as e:
+        print(f"❌ Transcription failed for {audio_path}: {e}")
+        return None
+
+
 # Load initial data
 data = load_data()
 messages = data["messages"]
@@ -82,6 +122,9 @@ async def fetch_new_messages():
             return
         
         print(f"📨 Found {len(updates)} new update(s)")
+        
+        # Track messages that need transcription
+        messages_to_transcribe = []
         
         # Process each update
         for update in updates:
@@ -163,10 +206,13 @@ async def fetch_new_messages():
                         "user": username,
                         "type": "audio",
                         "content": path,
-                        "time": timestamp
+                        "time": timestamp,
+                        "transcription": ""  # Will be filled later
                     }
                     if caption:
                         msg_entry["caption"] = caption
+                    # Mark for transcription
+                    messages_to_transcribe.append(msg_entry)
                 
                 # --- Voice Message ---
                 elif message.voice:
@@ -177,8 +223,11 @@ async def fetch_new_messages():
                         "user": username,
                         "type": "audio",
                         "content": path,
-                        "time": timestamp
+                        "time": timestamp,
+                        "transcription": ""  # Will be filled later
                     }
+                    # Mark for transcription
+                    messages_to_transcribe.append(msg_entry)
                 
                 # --- Document ---
                 elif message.document:
@@ -215,12 +264,38 @@ async def fetch_new_messages():
             except Exception as e:
                 print(f"❌ Error processing message: {e}")
         
-        # Save all messages and last_update_id
+        # Save messages before transcription
         save_data({
             "last_update_id": last_update_id,
             "messages": messages
         })
         print(f"💾 Saved {len(updates)} new message(s). Last update_id: {last_update_id}")
+        
+        # Transcribe audio messages (after saving)
+        if messages_to_transcribe and GEMINI_ENABLED:
+            print(f"\n🎤 Starting transcription for {len(messages_to_transcribe)} audio message(s)...")
+            
+            for msg in messages_to_transcribe:
+                # Skip if already transcribed
+                if msg.get("transcription"):
+                    print(f"⏭️ Skipping already transcribed: {msg['content']}")
+                    continue
+                
+                transcription = await transcribe_audio(msg["content"])
+                if transcription:
+                    msg["transcription"] = transcription
+                
+                # Small delay to respect rate limits (10 RPM = 6 seconds between requests)
+                await asyncio.sleep(6)
+            
+            # Save again with transcriptions
+            save_data({
+                "last_update_id": last_update_id,
+                "messages": messages
+            })
+            print("💾 Saved transcriptions to JSON")
+        elif messages_to_transcribe and not GEMINI_ENABLED:
+            print("⚠️ Skipping transcription: GEMINI_API_KEY not configured")
     
     except Exception as e:
         print(f"❌ Error fetching updates: {e}")
@@ -254,6 +329,13 @@ async def index():
             li { margin-bottom: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; }
             small { color: #666; }
             img, video { border-radius: 8px; margin-top: 10px; }
+            .transcription { 
+                background: #e3f2fd; 
+                padding: 10px; 
+                border-left: 3px solid #2196f3; 
+                margin-top: 10px;
+                font-style: italic;
+            }
         </style>
     </head>
     <body>
@@ -272,7 +354,10 @@ async def index():
             html += f"<li><b>{msg['user']}</b> sent a video:<br><video width='400' controls src='/{msg['content']}'></video>{caption_html}<br><small>{msg['time']}</small></li>"
         elif msg["type"] == "audio":
             caption_html = f"<br><i>{msg.get('caption')}</i>" if msg.get("caption") else ""
-            html += f"<li><b>{msg['user']}</b> sent audio:<br><audio controls src='/{msg['content']}'></audio>{caption_html}<br><small>{msg['time']}</small></li>"
+            transcription_html = ""
+            if msg.get("transcription"):
+                transcription_html = f"<div class='transcription'>🎤 Transcription: {msg['transcription']}</div>"
+            html += f"<li><b>{msg['user']}</b> sent audio:<br><audio controls src='/{msg['content']}'></audio>{transcription_html}{caption_html}<br><small>{msg['time']}</small></li>"
         elif msg["type"] == "document":
             caption_html = f"<br><i>{msg.get('caption')}</i>" if msg.get("caption") else ""
             html += f"<li><b>{msg['user']}</b> sent a document: <a href='/{msg['content']}' download>Download</a>{caption_html}<br><small>{msg['time']}</small></li>"

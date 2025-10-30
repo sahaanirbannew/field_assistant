@@ -11,8 +11,8 @@ A FastAPI-based personal journal application that fetches messages from your Tel
   - Photos (with captions)
   - Videos (with captions)
   - Video notes (round messages)
-  - Audio files (MP3/OGG)
-  - Voice messages
+  - Audio files (MP3/OGG) (with transcription)
+  - Voice messages  (with transcription)
   - Documents
   - Location sharing
 - **Web Interface**: Clean UI to view your journal entries
