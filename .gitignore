@@ -21,8 +21,8 @@ downloads/*
 !downloads/.gitkeep
 
 # Message storage
-messages/messages.json
-
+messages
+static
 # Distribution / packaging
 dist/
 build/
