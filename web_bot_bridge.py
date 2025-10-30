@@ -161,7 +161,7 @@ def save_data(data):
     # print(f"💾 Saved data for {len(messages_by_user)} users.") # Can be noisy
 
 
-# --- Transcription Function (Unchanged) ---
+# --- MODIFIED: Transcription Function ---
 async def transcribe_audio(audio_path: str) -> Optional[str]:
     """Transcribe audio file using Gemini API"""
     if not GEMINI_ENABLED:
@@ -169,31 +169,35 @@ async def transcribe_audio(audio_path: str) -> Optional[str]:
     
     try:
         print(f"🎤 Transcribing: {audio_path}")
+
+        # This inner function contains all the blocking (synchronous) code
+        def _blocking_transcribe():
+            # 1. Upload audio file
+            audio_file = genai.upload_file(path=audio_path)
+            
+            # 2. Get model
+            model = genai.GenerativeModel("gemini-2.0-flash-exp") 
+            
+            # 3. Request transcription
+            response = model.generate_content([
+                "Transcribe this audio file. Detect the language automatically and provide only the transcription text without any additional commentary.",
+                audio_file
+            ])
+            
+            # 4. Clean up the file
+            genai.delete_file(audio_file.name)
+            
+            return response.text.strip()
         
-        # Upload audio file to Gemini
-        audio_file = genai.upload_file(path=audio_path)
+        # --- Run the blocking function in a separate thread and await it ---
+        transcription = await asyncio.to_thread(_blocking_transcribe)
         
-        # Use Gemini 1.5 Flash
-        model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
-        
-        # Request transcription
-        response = model.generate_content([
-            "Transcribe this audio file. Detect the language automatically and provide only the transcription text without any additional commentary.",
-            audio_file
-        ])
-        
-        transcription = response.text.strip()
         print(f"✅ Transcription complete: {transcription[:50]}...")
-        
-        # Clean up the file
-        genai.delete_file(audio_file.name)
-        
         return transcription
     
     except Exception as e:
         print(f"❌ Transcription failed for {audio_path}: {e}")
         return None
-
 
 # --- Load initial data (This now runs the new load_data) ---
 data = load_data()
@@ -321,8 +325,7 @@ async def fetch_new_messages():
             print(f"\n🎤 Starting transcription for {len(messages_to_transcribe)} audio message(s)...")
             
             for msg in messages_to_transcribe:
-                # *** BUG FIX: Use asyncio.to_thread for synchronous genai call ***
-                transcription = await asyncio.to_thread(transcribe_audio, msg["content"])
+                transcription = await transcribe_audio(msg["content"])
                 if transcription:
                     msg["transcription"] = transcription
                 
