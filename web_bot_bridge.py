@@ -36,7 +36,15 @@ def load_data():
                 # Handle old format (just a list) or new format (dict with metadata)
                 if isinstance(data, list):
                     return {"last_update_id": None, "messages": data}
-                return data
+                # Handle empty dict or ensure required keys exist
+                if isinstance(data, dict):
+                    return {
+                        "last_update_id": data.get("last_update_id"),
+                        "messages": data.get("messages", [])
+                    }
+                # Fallback for unexpected formats
+                print("⚠️ Warning: Unexpected data format in messages.json. Starting fresh.")
+                return {"last_update_id": None, "messages": []}
         except json.JSONDecodeError:
             print("⚠️ Warning: Could not parse messages.json. Starting fresh.")
             return {"last_update_id": None, "messages": []}
