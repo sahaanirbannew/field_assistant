@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
