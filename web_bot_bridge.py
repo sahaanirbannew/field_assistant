@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from datetime import datetime
 from typing import Optional
+from contextlib import asynccontextmanager
 
 # --- Load environment variables ---
 load_dotenv()
@@ -142,13 +143,19 @@ async def run_telegram_bot():
     await app.start()
     print("🤖 Telegram bot is running in background...")
     await app.updater.start_polling()
-    await asyncio.Event().wait()
+
+# --- FastAPI Lifespan ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Code to run on startup
+    asyncio.create_task(run_telegram_bot())
+    yield
+    # Code to run on shutdown (if any)
 
 
 # --- FastAPI Web App ---
-web_app = FastAPI()
+web_app = FastAPI(lifespan=lifespan) # <-- PASS THE LIFESPAN HERE
 web_app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 @web_app.get("/", response_class=HTMLResponse)
 async def index():
@@ -235,12 +242,6 @@ async def search_messages(
     
     # Return whatever is left after filtering
     return JSONResponse(content=results_to_filter)
-
-
-# --- Startup Event ---
-@web_app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(run_telegram_bot())
 
 
 print("🚀 Starting FastAPI + Telegram Bridge")
