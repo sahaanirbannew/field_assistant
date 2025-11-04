@@ -203,4 +203,4 @@ This will fetch all new messages, download media to S3, and save the metadata to
   - **To modify the frontend data shape:** Update the TypeScript interfaces in `packages/frontend/src/types.ts` to match `models.py`.
 
 ## Future Implementation
- [] - Pagination 
+ - Pagination 
