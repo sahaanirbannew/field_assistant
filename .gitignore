@@ -19,6 +19,7 @@ media_files/*
 !media_files/.gitkeep
 downloads/*
 !downloads/.gitkeep
+temp_downloads
 
 # Message storage
 messages
@@ -27,6 +28,7 @@ static
 dist/
 build/
 *.egg-info/
+media
 
 # VS Code settings
 .vscode/

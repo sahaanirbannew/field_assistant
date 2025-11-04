@@ -1,0 +1,35 @@
+// This file defines the "shape" of the data we expect from the API.
+// It matches your Pydantic models in 'models.py'.
+
+export interface User {
+  id: number;
+  telegram_user_id: number;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  created_at: string;
+}
+
+export interface Media {
+  id: number;
+  message_id: number;
+  media_type: string;
+  file_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  description: string | null;
+  transcription: string | null;
+}
+
+export interface Message {
+  id: number;
+  telegram_message_id: number;
+  text: string | null;
+  timestamp: string;
+  
+  user: User | null;
+  media: Media[];
+}
+
