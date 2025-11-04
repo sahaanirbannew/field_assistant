@@ -344,3 +344,19 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
+
+def lambda_handler(event, context):
+    """
+    This is the function AWS Lambda will run.
+    'event' and 'context' are passed by Lambda.
+    """
+    print("Fetcher Lambda job started...")
+
+    try:
+        asyncio.run(main())
+        print("Fetcher Lambda job complete.")
+        return { 'statusCode': 200, 'body': 'Success' }
+    except Exception as e:
+        print(f"Error in fetcher: {e}")
+        return { 'statusCode': 500, 'body': 'Error' }
