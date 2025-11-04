@@ -1,6 +1,3 @@
-// This file defines the "shape" of the data we expect from the API.
-// It matches your Pydantic models in 'models.py'.
-
 export interface User {
   id: number;
   telegram_user_id: number;

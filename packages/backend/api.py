@@ -11,10 +11,7 @@ import mimetypes
 import google.generativeai as genai
 from PIL import Image
 import io
-
-# Import our shared database and models
 import db
-# --- UPDATED: No PaginatedMessages ---
 from models import MessageWithRelations, User, Media
 
 # --- Pydantic models for API request bodies ---

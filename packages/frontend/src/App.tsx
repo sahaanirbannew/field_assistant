@@ -113,7 +113,6 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
   );
 }
 
-// --- MediaItem Component (Unchanged) ---
 function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia: Media) => void; }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -181,7 +180,6 @@ function App() {
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>("")
 
-  // --- THIS IS THE STABLE DATA FETCHING LOGIC ---
   const fetchMessages = useCallback(async (user: string, start: string, end: string) => {
     setLoading(true);
     setError(null);
@@ -206,9 +204,8 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []); // <-- This function is stable
+  }, []); 
 
-  // This useEffect runs ONCE on mount to get users and initial messages
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -219,11 +216,10 @@ function App() {
       } catch (e: any) {
         setError(e.message);
       }
-      // After users are fetched, fetch all messages
       fetchMessages("", "", "");
     }
     fetchInitialData();
-  }, [fetchMessages]); // This dependency is stable, so it only runs once
+  }, [fetchMessages]); 
   
   
   const handleMediaUpdated = (updatedMedia: Media) => {
@@ -240,7 +236,6 @@ function App() {
     });
   };
 
-  // --- Filter handlers now MANUALLY call fetchMessages ---
   const handleFilterSubmit = () => {
     fetchMessages(selectedUser, startDate, endDate);
   }
@@ -314,7 +309,6 @@ function App() {
         </div>
       </div>
       
-      {/* --- REVERTED: No Pagination Controls --- */}
 
       {/* Message List */}
       {loading && <h2 className="text-xl font-bold text-center animate-pulse">Loading...</h2>}
@@ -352,7 +346,6 @@ function App() {
         </div>
       )}
       
-      {/* --- REVERTED: No Pagination Controls --- */}
 
     </div>
   )
