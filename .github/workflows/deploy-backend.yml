@@ -1,8 +1,5 @@
 name: Deploy Backend to AWS Lambda
 
-# This is the trigger.
-# It only runs when you push to the 'main' branch
-# AND only if files inside 'packages/backend/' were changed.
 on:
   push:
     branches:
@@ -12,21 +9,17 @@ on:
 
 jobs:
   deploy:
-    # This job runs on a fresh "virtual computer" (Ubuntu)
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checks-out your repository's code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Sets up the Python version
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12'
 
-      # 3. Logs into AWS using the secrets you stored in GitHub
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -34,26 +27,35 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # 4. Builds the deployment .zip file
       - name: Build backend package
         run: |
-          # This series of commands runs inside the GitHub server
+          # Define a unique name for our zip file
+          # This helps S3 and Lambda track new versions
+          echo "ZIP_FILE_NAME=backend-build-${{ github.sha }}.zip" >> $GITHUB_ENV
+
           cd packages/backend
           pip install -r requirements.txt --target ./pkg
           cp ./*.py ./pkg/
           cd pkg
           zip -r ../backend.zip .
-          
-      # 5. Deploys the zip file to the FETCHER Lambda
+      
+      # --- NEW STEP ---
+      - name: Upload package to S3
+        run: |
+          aws s3 cp packages/backend/backend.zip s3://${{ secrets.S3_DEPLOY_BUCKET }}/${{ env.ZIP_FILE_NAME }}
+
+      # --- UPDATED STEP ---
       - name: Deploy Fetcher Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FETCHER_NAME }} \
-            --zip-file fileb://packages/backend/backend.zip
+            --s3-bucket ${{ secrets.S3_DEPLOY_BUCKET }} \
+            --s3-key ${{ env.ZIP_FILE_NAME }}
 
-      # 6. Deploys the SAME zip file to the API Lambda
+      # --- UPDATED STEP ---
       - name: Deploy API Lambda
         run: |
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_API_NAME }} \
-            --zip-file fileb://packages/backend/backend.zip
+            --s3-bucket ${{ secrets.S3_DEPLOY_BUCKET }} \
+            --s3-key ${{ env.ZIP_FILE_NAME }}
