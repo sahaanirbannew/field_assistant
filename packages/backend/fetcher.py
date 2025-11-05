@@ -33,7 +33,6 @@ if not S3_BUCKET_NAME or not S3_ACCESS_KEY_ID or not S3_SECRET_ACCESS_KEY:
     raise RuntimeError("Please set S3_BUCKET_NAME, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY in your .env")
 
 # --- Global Clients ---
-bot = Bot(token=BOT_TOKEN)
 s3_client = boto3.client(
     's3',
     endpoint_url=S3_ENDPOINT_URL,
@@ -136,7 +135,7 @@ async def upload_telegram_file_to_s3(file_obj, s3_key, mime_type):
 
 # ---------------- Main Processor ----------------
 
-async def process_update(conn, update_obj):
+async def process_update(conn, update_obj, bot: Bot):
     msg = update_obj.message or update_obj.edited_message
     if not msg: return
     update_id = update_obj.update_id
@@ -222,6 +221,7 @@ async def process_update(conn, update_obj):
 
 async def main():
     """Main entry point for the script."""
+    bot = Bot(token=BOT_TOKEN)
     init_db() # This now uses the shared function
     conn = get_conn()
     try:
