@@ -240,7 +240,7 @@ async def main():
         
         for upd in updates:
             try:
-                await process_update(conn, upd)
+                await process_update(conn, upd, bot)
                 if getattr(upd, 'update_id', None) and upd.update_id > max_update:
                     max_update = upd.update_id
             except Exception as e:
