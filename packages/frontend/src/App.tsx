@@ -342,8 +342,8 @@ function App() {
 
   return (
     <div className="max-w-3xl mx-auto p-5 font-sans">
-      <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-        Field Assistant Archive
+      <h1 className="text-3xl font-bold text-center text-white mb-8">
+        Field Notes
       </h1>
       
       {/* Filter Bar */}
