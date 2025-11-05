@@ -5,10 +5,6 @@ from typing import Optional, List, Any
 # --- Base Pydantic Model Configuration ---
 
 class OrmBaseModel(BaseModel):
-    """
-    A base model that configures Pydantic to read data from
-    database objects (ORM objects) as well as dictionaries.
-    """
     model_config = ConfigDict(from_attributes=True)
 
 # --- Database Table Models ---
@@ -49,10 +45,15 @@ class Message(OrmBaseModel):
 # --- API Response Models ---
 
 class MessageWithRelations(Message):
-    """
-    A full Message response model that includes the user who
-    sent it and a list of any attached media.
-    """
     user: Optional[User] = None
     media: List[Media] = []
 
+# --- Pagination Response Model ---
+class PaginatedMessages(BaseModel):
+    """
+    The response model for a paginated list of messages.
+    """
+    messages: List[MessageWithRelations]
+    total_count: int
+    total_pages: int
+    current_page: int

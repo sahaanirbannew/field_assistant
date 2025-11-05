@@ -25,8 +25,13 @@ export interface Message {
   telegram_message_id: number;
   text: string | null;
   timestamp: string;
-  
   user: User | null;
   media: Media[];
 }
 
+export interface PaginatedMessages {
+  messages: Message[];
+  total_count: number;
+  total_pages: number;
+  current_page: number;
+}

@@ -1,24 +1,32 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { Message, Media, User } from './types'
+import { useState, useEffect, useRef } from 'react'
+import type { Message, Media, User, PaginatedMessages } from './types'
+import './App.css'
 
+// Use the VITE_API_URL from environment, fall back to localhost
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const MESSAGES_PER_PAGE = 25;
 
+// --- Reusable Editable Field Component ---
 interface EditableFieldProps {
   media: Media;
   fieldName: 'description' | 'transcription';
   onUpdate: (updatedMedia: Media) => void;
 }
+
 function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(media[fieldName] || "");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+
   const label = fieldName.charAt(0).toUpperCase() + fieldName.slice(1);
   const hasText = text !== null && text.length > 0;
+
   useEffect(() => {
     setText(media[fieldName] || "");
   }, [media, fieldName]);
+
   const handleSave = async () => {
     try {
       const response = await fetch(`${API_URL}/media/${media.id}/${fieldName}`, {
@@ -35,6 +43,7 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
       setError(err.message);
     }
   };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
     setError(null);
@@ -57,10 +66,12 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
       setIsGenerating(false);
     }
   };
+
   return (
     <div className="bg-gray-50 p-3 rounded-lg border">
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       {error && <div className="text-sm text-red-500 mb-2">Error: {error}</div>}
+      
       {isEditing ? (
         <div className="flex flex-col gap-2">
           <textarea
@@ -70,8 +81,18 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
             rows={3}
           />
           <div className="flex gap-2">
-            <button onClick={handleSave} className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">Save</button>
-            <button onClick={() => setIsEditing(false)} className="px-3 py-1 bg-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-400">Cancel</button>
+            <button
+              onClick={handleSave}
+              className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setIsEditing(false)}
+              className="px-3 py-1 bg-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-400"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       ) : (
@@ -113,9 +134,12 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
   );
 }
 
+
+// --- MediaItem Component ---
 function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia: Media) => void; }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const fetchMediaUrl = async () => {
       if (media.media_type === 'location') {
@@ -139,9 +163,11 @@ function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia:
     };
     fetchMediaUrl();
   }, [media.file_path, media.latitude, media.longitude, media.media_type]);
+
   const renderMedia = () => {
     if (loading) return <div className="text-sm text-gray-500 italic animate-pulse">Loading media...</div>;
     if (!url) return <div className="text-sm text-red-500">Could not load media.</div>;
+
     switch (media.media_type) {
       case 'photo':
       case 'sticker':
@@ -157,6 +183,7 @@ function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia:
         return <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Download {media.file_name || media.media_type}</a>;
     }
   }
+
   return (
     <div className="flex flex-col gap-2">
       {renderMedia()}
@@ -170,6 +197,47 @@ function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia:
   )
 }
 
+// --- NEW: Lazy Loading Component (to fix 503 error) ---
+function LazyMediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia: Media) => void; }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const placeholderRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.unobserve(entry.target);
+        }
+      },
+      { rootMargin: "0px 0px 200px 0px" } // Load 200px *before* it's visible
+    );
+
+    if (placeholderRef.current) {
+      observer.observe(placeholderRef.current);
+    }
+
+    return () => {
+      if (placeholderRef.current) {
+        observer.unobserve(placeholderRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div ref={placeholderRef} style={{ minHeight: '100px' }}>
+      {isVisible ? (
+        <MediaItem media={media} onUpdate={onUpdate} />
+      ) : (
+        <div className="text-sm text-gray-500 italic animate-pulse">
+          Loading media...
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // --- Main App Component ---
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -179,49 +247,63 @@ function App() {
   const [selectedUser, setSelectedUser] = useState<string>("")
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>("")
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const fetchMessages = useCallback(async (user: string, start: string, end: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (user) params.append("telegram_user_id", user);
-      if (start) params.append("start_date", new Date(start).toISOString());
-      if (end) params.append("end_date", new Date(end).toISOString());
-      
-      const queryString = params.toString();
-      const response = await fetch(`${API_URL}/messages?${queryString}`);
-      
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.detail || `HTTP error! status: ${response.status}`);
-      }
-      
-      const data: Message[] = await response.json();
-      setMessages(data);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []); 
-
+  // This is the stable useEffect that drives all data fetching
   useEffect(() => {
-    const fetchInitialData = async () => {
+    const fetchAllData = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        const userResponse = await fetch(`${API_URL}/users`);
-        if (!userResponse.ok) throw new Error('Failed to fetch users');
-        const userData: User[] = await userResponse.json();
-        setUsers(userData);
+        // 1. Fetch Users (only on first load)
+        if (users.length === 0) {
+          const userResponse = await fetch(`${API_URL}/users`);
+          if (!userResponse.ok) throw new Error('Failed to fetch users');
+          const userData: User[] = await userResponse.json();
+          setUsers(userData);
+        }
+
+        // 2. Fetch Messages (always)
+        const params = new URLSearchParams();
+        params.append("page", currentPage.toString());
+        params.append("limit", MESSAGES_PER_PAGE.toString());
+        
+        if (selectedUser) params.append("telegram_user_id", selectedUser);
+        if (startDate) params.append("start_date", new Date(startDate).toISOString());
+        if (endDate) params.append("end_date", new Date(endDate).toISOString());
+        
+        const queryString = params.toString();
+        const response = await fetch(`${API_URL}/messages?${queryString}`);
+        
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.detail || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data: PaginatedMessages = await response.json();
+        
+        setMessages(data.messages);
+        setTotalPages(data.total_pages);
+        setCurrentPage(data.current_page);
+        setTotalCount(data.total_count);
+
       } catch (e: any) {
         setError(e.message);
+      } finally {
+        setLoading(false);
       }
-      fetchMessages("", "", "");
-    }
-    fetchInitialData();
-  }, [fetchMessages]); 
-  
-  
+    };
+    
+    fetchAllData();
+    
+  }, [currentPage, selectedUser, startDate, endDate]);
+  // We remove users.length from here to simplify the logic.
+  // The if (users.length === 0) check handles it.
+
+
   const handleMediaUpdated = (updatedMedia: Media) => {
     setMessages(currentMessages => {
       return currentMessages.map(msg => {
@@ -237,20 +319,32 @@ function App() {
   };
 
   const handleFilterSubmit = () => {
-    fetchMessages(selectedUser, startDate, endDate);
+    setCurrentPage(1); 
   }
 
   const handleClearFilters = () => {
     setSelectedUser("");
     setStartDate("");
     setEndDate("");
-    fetchMessages("", "", ""); // Fetch with cleared filters
+    setCurrentPage(1);
+  }
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(page => page + 1);
+    }
+  }
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(page => page - 1);
+    }
   }
 
   return (
     <div className="max-w-3xl mx-auto p-5 font-sans">
-      <h1 className="text-3xl font-bold text-center text-white mb-8">
-        Field Notes
+      <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
+        Field Assistant Archive
       </h1>
       
       {/* Filter Bar */}
@@ -309,9 +403,29 @@ function App() {
         </div>
       </div>
       
+      {/* Pagination Controls */}
+      <div className="flex justify-between items-center mb-4">
+        <button
+          onClick={handlePrevPage}
+          disabled={currentPage <= 1 || loading}
+          className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          ← Previous
+        </button>
+        <span className="text-gray-700">
+          Page {currentPage} of {totalPages || 1} (Total: {totalCount} messages)
+        </span>
+        <button
+          onClick={handleNextPage}
+          disabled={currentPage >= totalPages || loading}
+          className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next →
+        </button>
+      </div>
 
       {/* Message List */}
-      {loading && <h2 className="text-xl font-bold text-center animate-pulse">Loading...</h2>}
+      {loading && <h2 className="text-xl font-bold text-center">Loading...</h2>}
       {error && <h2 className="text-xl font-bold text-center text-red-600">Error: {error}</h2>}
       
       {!loading && !error && (
@@ -337,7 +451,7 @@ function App() {
               {msg.media.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-200 border-dashed flex flex-col gap-4">
                   {msg.media.map((item) => (
-                    <MediaItem key={item.id} media={item} onUpdate={handleMediaUpdated} />
+                    <LazyMediaItem key={item.id} media={item} onUpdate={handleMediaUpdated} />
                   ))}
                 </div>
               )}
@@ -346,6 +460,28 @@ function App() {
         </div>
       )}
       
+      {/* Pagination Controls (Bottom) */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center mt-6 pt-4 border-t">
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPage <= 1 || loading}
+            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ← Previous
+          </button>
+          <span className="text-gray-700">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage >= totalPages || loading}
+            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
+        </div>
+      )}
 
     </div>
   )
