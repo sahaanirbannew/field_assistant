@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Message, Media, User, PaginatedMessages } from './types'
-import './App.css'
 
 // Use the VITE_API_URL from environment, fall back to localhost
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
