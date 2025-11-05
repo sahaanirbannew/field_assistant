@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Message, Media, User } from './types'
 
-const API_URL = 'http://localhost:8000' 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 interface EditableFieldProps {
   media: Media;
