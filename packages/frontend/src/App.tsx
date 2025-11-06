@@ -401,6 +401,11 @@ function App() {
           </button>
         </div>
       </div>
+
+      {/* Summarize Button */}
+      <div className='w-full flex justify-center my-4'>
+        <button className='bg-red-700 px-4 py-2 text-white rounded-xl cursor-pointer'>Summarize</button>
+      </div>
       
       {/* Pagination Controls */}
       <div className="flex justify-between items-center mb-4">
@@ -424,7 +429,7 @@ function App() {
       </div>
 
       {/* Message List */}
-      {loading && <h2 className="text-xl font-bold text-center">Loading...</h2>}
+      {loading && <h2 className="text-xl font-bold text-center animate-pulse">Loading...</h2>}
       {error && <h2 className="text-xl font-bold text-center text-red-600">Error: {error}</h2>}
       
       {!loading && !error && (
