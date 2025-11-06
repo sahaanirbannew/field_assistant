@@ -63,7 +63,7 @@ origins = [
     "http://localhost",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    # You will add your Amplify URL here after it's deployed
+    "http://main.d3i2w4tw6z3szj.amplifyapp.com",
 ]
 app.add_middleware(
     CORSMiddleware,
