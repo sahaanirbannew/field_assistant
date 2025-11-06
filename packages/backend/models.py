@@ -50,9 +50,6 @@ class MessageWithRelations(Message):
 
 # --- Pagination Response Model ---
 class PaginatedMessages(BaseModel):
-    """
-    The response model for a paginated list of messages.
-    """
     messages: List[MessageWithRelations]
     total_count: int
     total_pages: int

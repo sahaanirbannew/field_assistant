@@ -8,12 +8,12 @@ import psycopg2.extras
 import os
 import boto3
 import mimetypes 
-import google.generativeai as genai
-from PIL import Image
-import io
 import math
+import io
+import google.generativeai as genai
 
-# Import our shared database and models
+
+# Import shared database and models
 import db
 from models import MessageWithRelations, User, Media, PaginatedMessages
 
@@ -59,12 +59,7 @@ app = FastAPI(
 )
 
 # --- CORS Configuration ---
-origins = [
-    "http://localhost",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://main.d3i2w4tw6z3szj.amplifyapp.com",
-]
+origins = ["*"] # Allow all origins for simplicity
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -120,17 +115,13 @@ def get_all_users(conn: psycopg2.extensions.connection = Depends(get_db_connecti
 @app.get("/messages", response_model=PaginatedMessages)
 def get_all_messages(
     conn: psycopg2.extensions.connection = Depends(get_db_connection),
-    # Filter params
     telegram_user_id: Optional[int] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    # Pagination params
     page: int = Query(1, ge=1),
     limit: int = Query(25, ge=1, le=100)
 ):
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        
-        # --- Build WHERE clause for filters ---
         where_clauses = []
         filter_params = []
         join_clause = "LEFT JOIN users u ON m.user_id = u.id" 
@@ -149,29 +140,16 @@ def get_all_messages(
         if where_clauses:
             where_sql = " WHERE " + " AND ".join(where_clauses)
             
-        # --- 1. Get TOTAL COUNT query ---
-        count_query = f"""
-            SELECT COUNT(m.id) 
-            FROM messages m 
-            {join_clause}
-            {where_sql};
-        """
+        count_query = f"SELECT COUNT(m.id) FROM messages m {join_clause} {where_sql};"
         cur.execute(count_query, tuple(filter_params))
         total_count = cur.fetchone()['count']
         
         if total_count == 0:
-            return {
-                "messages": [],
-                "total_count": 0,
-                "total_pages": 0,
-                "current_page": 1
-            }
+            return {"messages": [], "total_count": 0, "total_pages": 0, "current_page": 1}
 
-        # --- 2. Calculate pagination details ---
         total_pages = math.ceil(total_count / limit)
         offset = (page - 1) * limit
         
-        # --- 3. Get paginated messages query ---
         main_query = f"""
             SELECT 
                 m.id, m.telegram_message_id, m.update_id, m.user_id, 
@@ -181,8 +159,7 @@ def get_all_messages(
                     (SELECT jsonb_agg(med.* ORDER BY med.id) FROM media med WHERE med.message_id = m.id), 
                     '[]'::jsonb
                 ) as media
-            FROM 
-                messages m
+            FROM messages m
             {join_clause}
             {where_sql}
             ORDER BY m.timestamp DESC
@@ -193,7 +170,6 @@ def get_all_messages(
         cur.execute(main_query, final_params)
         messages = cur.fetchall()
         
-        # --- 4. Return the full paginated object ---
         return {
             "messages": messages,
             "total_count": total_count,
@@ -243,18 +219,39 @@ async def generate_description(
     request: GenerateRequest,
     conn: psycopg2.extensions.connection = Depends(get_db_connection)
 ):
+    """Generates a description for an image using Gemini."""
     if not GOOGLE_API_KEY:
         raise HTTPException(status_code=501, detail="Gemini API key not configured")
+
     media = get_media_item(media_id, conn)
     if not media["file_path"]:
         raise HTTPException(status_code=400, detail="Media has no file path")
+
     try:
+        # --- THIS IS THE FIX ---
+        
+        # 1. Download image bytes from S3 (e.g., 5MB)
         obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=media["file_path"])
         image_bytes = obj['Body'].read()
-        img = Image.open(io.BytesIO(image_bytes))
+        
+        # 2. Get the mime type (e.g., 'image/jpeg')
+        mime_type = media["mime_type"] or mimetypes.guess_type(media["file_name"])[0]
+        
+        # 3. Create a 'Part' object for Gemini using the raw bytes
+        # We are SKIPPING the memory-intensive Pillow (Image.open) step
+        image_part = {
+            "mime_type": mime_type,
+            "data": image_bytes
+        }
+        
+        # 4. Send to Gemini
         prompt_text = request.prompt or "Describe this image for a field journal. Be concise and objective."
-        response = await vision_model.generate_content_async([prompt_text, img])
+        # Pass the prompt and the image part (raw bytes)
+        response = await vision_model.generate_content_async([prompt_text, image_part])
+        
         description = response.text
+        
+        # 5. Save to database
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 "UPDATE media SET description = %s WHERE id = %s RETURNING *",
@@ -263,6 +260,7 @@ async def generate_description(
             updated_media = cur.fetchone()
             conn.commit()
             return updated_media
+            
     except Exception as e:
         print(f"Error generating description: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -308,10 +306,8 @@ async def generate_transcription(
         print(f"Error generating transcription: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Clean up the file from Gemini
         if audio_file:
             try:
-                # --- This is the fix for the delete_file_async error ---
                 genai.files.delete_file(audio_file.name)
                 print(f"Cleaned up Gemini file: {audio_file.name}")
             except Exception as e:
@@ -324,6 +320,4 @@ if __name__ == "__main__":
 
 # --- DEPLOYMENT HANDLER FOR AWS LAMBDA ---
 from mangum import Mangum
-
-# This 'handler' is the entry point for AWS Lambda
 handler = Mangum(app)
