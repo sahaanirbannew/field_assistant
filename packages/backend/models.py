@@ -54,3 +54,29 @@ class PaginatedMessages(BaseModel):
     total_count: int
     total_pages: int
     current_page: int
+
+# --- API Request Models ---
+
+class GenerateRequest(BaseModel):
+    prompt: Optional[str] = None
+
+class UpdateDescriptionRequest(BaseModel):
+    description: str = ""
+
+class UpdateTranscriptionRequest(BaseModel):
+    transcription: str = ""
+
+class SummarizeRequest(BaseModel):
+    full_text: str  # This is the concatenated blob
+    prompt: Optional[str] = None
+
+# --- NEW: Export Response Model ---
+# This defines the "shape" of our new export.
+# We are creating a simple model for the list items.
+class ExportMessage(BaseModel):
+    timestamp: str
+    user: str
+    text: Optional[str] = None
+    image_description: Optional[str] = None
+    audio_transcription: Optional[str] = None
+    location: Optional[str] = None

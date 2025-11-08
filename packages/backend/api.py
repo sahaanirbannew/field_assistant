@@ -3,6 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from datetime import date, datetime
+import json
 import psycopg2
 import psycopg2.extras
 import os
@@ -15,8 +16,11 @@ import google.generativeai as genai
 
 # Import shared database and models
 import db
-from models import MessageWithRelations, User, Media, PaginatedMessages
-
+from models import (
+    MessageWithRelations, User, Media, PaginatedMessages,
+    GenerateRequest, UpdateDescriptionRequest, UpdateTranscriptionRequest,
+    SummarizeRequest, ExportMessage  
+)
 # --- Pydantic models for API request bodies ---
 from pydantic import BaseModel
 
@@ -245,7 +249,7 @@ async def generate_description(
         }
         
         # 4. Send to Gemini
-        prompt_text = request.prompt or "Describe this image for a field journal. Be concise and objective."
+        prompt_text = request.prompt or "Describe this image. Be concise and objective."
         # Pass the prompt and the image part (raw bytes)
         response = await vision_model.generate_content_async([prompt_text, image_part])
         
@@ -312,6 +316,122 @@ async def generate_transcription(
                 print(f"Cleaned up Gemini file: {audio_file.name}")
             except Exception as e:
                 print(f"Warning: Failed to delete Gemini file {audio_file.name}: {e}")
+
+
+# ---  ENDPOINT FOR SUMMARIZATION (EXPORT) ---
+@app.get("/messages/export", response_model=List[ExportMessage]) 
+def get_all_messages_for_export(
+    conn: psycopg2.extensions.connection = Depends(get_db_connection),
+    # It accepts the exact same filters as /messages
+    telegram_user_id: Optional[int] = Query(None),
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None)
+):
+    """
+    Fetches ALL messages matching a filter, without pagination,
+    and formats them into a structured JSON list for summarization.
+    Saves a local copy for testing.
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        
+        # 1. Build the dynamic query (same as /messages)
+        query = """
+            SELECT 
+                m.text, m.timestamp,
+                to_jsonb(u) as user,
+                COALESCE(
+                    (SELECT jsonb_agg(med.* ORDER BY med.id) FROM media med WHERE med.message_id = m.id), 
+                    '[]'::jsonb
+                ) as media
+            FROM 
+                messages m
+            LEFT JOIN 
+                users u ON m.user_id = u.id
+        """
+        where_clauses = []
+        params = []
+        
+        if telegram_user_id:
+            where_clauses.append("u.telegram_user_id = %s")
+            params.append(telegram_user_id)
+        if start_date:
+            where_clauses.append("m.timestamp >= %s")
+            params.append(start_date)
+        if end_date:
+            where_clauses.append("m.timestamp <= %s")
+            params.append(end_date)
+        
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+            
+        query += " ORDER BY m.timestamp ASC;"
+        
+        cur.execute(query, tuple(params))
+        messages = cur.fetchall()
+
+        # 3. --- UPDATED: Create a list of structured objects ---
+        export_data = []
+        for msg in messages:
+            user_name = msg['user']['first_name'] if msg['user'] and msg['user']['first_name'] else 'Unknown'
+            timestamp_str = msg['timestamp'].isoformat()
+            
+            message_entry = {
+                "timestamp": timestamp_str,
+                "user": user_name,
+                "text": msg['text'] or None
+            }
+            
+            # Add media data if it exists
+            for media_item in msg['media']:
+                if media_item['media_type'] == 'photo' and media_item['description']:
+                    message_entry["image_description"] = media_item['description']
+                if media_item['media_type'] in ('audio', 'voice') and media_item['transcription']:
+                    message_entry["audio_transcription"] = media_item['transcription']
+                if media_item['media_type'] == 'location':
+                    message_entry["location"] = f"({media_item['latitude']}, {media_item['longitude']})"
+            
+            export_data.append(message_entry)
+
+        # 4. --- UPDATED: Save the data as a JSON file ---
+        export_filename = "_test_export.json"
+        try:
+            export_dir = os.path.join(os.path.dirname(__file__), "exports")
+            os.makedirs(export_dir, exist_ok=True)
+            export_path = os.path.join(export_dir, export_filename)
+
+            # Write the file as a JSON list
+            with open(export_path, "w", encoding="utf-8") as f:
+                json.dump(export_data, f, indent=2)
+                
+            print(f"Export saved to {export_path}")
+        except Exception as e:
+            print(f"Warning: failed to save export locally: {e}")
+
+        # 5. Return the structured list to the frontend
+        return export_data
+
+# --- NEW ENDPOINT FOR SUMMARIZATION (AI) ---
+@app.post("/summarize", response_model=dict)
+async def generate_summary(request: SummarizeRequest):
+    """
+    Takes a large block of text and generates a summary using Gemini.
+    """
+    if not GOOGLE_API_KEY:
+        raise HTTPException(status_code=501, detail="Gemini API key not configured")
+
+    try:
+        final_prompt = request.prompt or "Summarize the following field notes, messages, descriptions, and transcriptions into a concise report. Group observations by theme or location if possible:"
+        
+        full_content = final_prompt + "\n\n--- DATA START ---\n" + request.full_text + "\n--- DATA END ---"
+        
+        # Send to Gemini
+        response = await vision_model.generate_content_async(full_content)
+        
+        return {"summary": response.text}
+        
+    except Exception as e:
+        print(f"Error generating summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Run the App ---
 if __name__ == "__main__":
