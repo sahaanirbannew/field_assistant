@@ -35,3 +35,12 @@ export interface PaginatedMessages {
   total_pages: number;
   current_page: number;
 }
+
+export interface ExportMessage {
+  timestamp: string;
+  user: string;
+  text: string | null;
+  image_description: string | null;
+  audio_transcription: string | null;
+  location: string | null;
+}

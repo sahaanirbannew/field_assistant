@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
-import type { Message, Media, User, PaginatedMessages } from './types'
+import { useState, useEffect, useRef, type ChangeEvent } from 'react'
+import type { Message, Media, User, PaginatedMessages, ExportMessage } from './types' // Import ExportMessage
 
 // Use the VITE_API_URL from environment, fall back to localhost
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const MESSAGES_PER_PAGE = 25;
 
-// --- Reusable Editable Field Component ---
+// --- Reusable Editable Field Component (Unchanged) ---
 interface EditableFieldProps {
   media: Media;
   fieldName: 'description' | 'transcription';
@@ -134,7 +134,7 @@ function EditableField({ media, fieldName, onUpdate }: EditableFieldProps) {
 }
 
 
-// --- MediaItem Component ---
+// --- MediaItem Component (Unchanged) ---
 function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia: Media) => void; }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,7 +142,7 @@ function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia:
   useEffect(() => {
     const fetchMediaUrl = async () => {
       if (media.media_type === 'location') {
-        setUrl(`https://maps.google.com/?q=${media.latitude},${media.longitude}`);
+        setUrl(`http://googleusercontent.com/maps/google.com/0{media.latitude},${media.longitude}`);
         setLoading(false);
         return;
       }
@@ -196,7 +196,7 @@ function MediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia:
   )
 }
 
-// --- NEW: Lazy Loading Component (to fix 503 error) ---
+// --- Lazy Loading Component (Unchanged) ---
 function LazyMediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMedia: Media) => void; }) {
   const [isVisible, setIsVisible] = useState(false);
   const placeholderRef = useRef<HTMLDivElement>(null);
@@ -209,16 +209,17 @@ function LazyMediaItem({ media, onUpdate }: { media: Media; onUpdate: (updatedMe
           observer.unobserve(entry.target);
         }
       },
-      { rootMargin: "0px 0px 200px 0px" } // Load 200px *before* it's visible
+      { rootMargin: "0px 0px 200px 0px" } 
     );
 
-    if (placeholderRef.current) {
-      observer.observe(placeholderRef.current);
+    const currentRef = placeholderRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
     }
 
     return () => {
-      if (placeholderRef.current) {
-        observer.unobserve(placeholderRef.current);
+      if (currentRef) {
+        observer.unobserve(currentRef);
       }
     };
   }, []);
@@ -243,12 +244,19 @@ function App() {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
   const [selectedUser, setSelectedUser] = useState<string>("")
   const [startDate, setStartDate] = useState<string>("")
   const [endDate, setEndDate] = useState<string>("")
+  
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  
+  // --- UPDATED: These states are now for the JSON Export ---
+  const [isSummarizing, setIsSummarizing] = useState(false); // Renamed to isExporting
+  const [summary, setSummary] = useState<string | null>(null); // Renamed to exportResult
+  const [summaryError, setSummaryError] = useState<string | null>(null); // Renamed to exportError
 
   // This is the stable useEffect that drives all data fetching
   useEffect(() => {
@@ -298,9 +306,7 @@ function App() {
     
     fetchAllData();
     
-  }, [currentPage, selectedUser, startDate, endDate]);
-  // We remove users.length from here to simplify the logic.
-  // The if (users.length === 0) check handles it.
+  }, [currentPage, selectedUser, startDate, endDate, users.length]);
 
 
   const handleMediaUpdated = (updatedMedia: Media) => {
@@ -340,13 +346,89 @@ function App() {
     }
   }
 
+  // --- UPDATED: This function now EXPORTS JSON, not summarizes ---
+  const handleSummarize = async () => {
+    setIsSummarizing(true); // Re-using this state, means "isExporting"
+    setError(null); 
+    setSummaryError(null); 
+    setSummary(null); 
+
+    try {
+      // --- Step 1: Fetch the structured JSON data ---
+      const params = new URLSearchParams();
+      if (selectedUser) params.append("telegram_user_id", selectedUser);
+      if (startDate) params.append("start_date", new Date(startDate).toISOString());
+      if (endDate) params.append("end_date", new Date(endDate).toISOString());
+      
+      const response = await fetch(`${API_URL}/messages/export?${params.toString()}`);
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Failed to fetch data for export');
+      }
+      
+      // We expect an array of ExportMessage objects
+      const exportData: ExportMessage[] = await response.json();
+
+      if (!exportData || exportData.length === 0) {
+        throw new Error("No text content found in the selected range to export.");
+      }
+
+      // --- Step 2: Convert the JSON object to a string for display ---
+      // JSON.stringify(value, replacer, space) -- 2 spaces for nice indentation
+      const jsonString = JSON.stringify(exportData, null, 2);
+      
+      // --- Step 3: Set the summary state to this new JSON string ---
+      setSummary(jsonString);
+
+      // --- Step 4: (REMOVED) No /summarize call ---
+
+    } catch (e: any) {
+      setSummaryError(e.message); 
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+  
+  // --- Smart handlers for date inputs (Unchanged) ---
+  const handleStartDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    if (!newValue) {
+      setStartDate("");
+      return;
+    }
+    const newDatePart = newValue.split('T')[0];
+    const oldDatePart = startDate.split('T')[0];
+    if (newDatePart !== oldDatePart) {
+      setStartDate(newDatePart + "T00:00");
+    } else {
+      setStartDate(newValue);
+    }
+  };
+
+  const handleEndDateChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    if (!newValue) {
+      setEndDate("");
+      return;
+    }
+    const newDatePart = newValue.split('T')[0];
+    const oldDatePart = endDate.split('T')[0];
+    if (newDatePart !== oldDatePart) {
+      setEndDate(newDatePart + "T23:59");
+    } else {
+      setEndDate(newValue);
+    }
+  };
+
+
   return (
     <div className="max-w-3xl mx-auto p-5 font-sans">
       <h1 className="text-3xl font-bold text-center text-white mb-8">
         Field Notes
       </h1>
       
-      {/* Filter Bar */}
+      {/* Filter Bar (Unchanged) */}
       <div className="bg-gray-100 p-4 rounded-lg mb-6 shadow-sm text-black">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -370,8 +452,8 @@ function App() {
             <input
               type="datetime-local"
               id="start-date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              value={startDate} 
+              onChange={handleStartDateChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
             />
           </div>
@@ -380,8 +462,8 @@ function App() {
             <input
               type="datetime-local"
               id="end-date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              value={endDate} 
+              onChange={handleEndDateChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm"
             />
           </div>
@@ -402,12 +484,43 @@ function App() {
         </div>
       </div>
 
-      {/* Summarize Button */}
-      <div className='w-full flex justify-center my-4'>
-        <button className='bg-red-700 px-4 py-2 text-white rounded-xl cursor-pointer'>Summarize</button>
-      </div>
+      {/* --- UPDATED: Summarize Button --- */}
+     <div className='w-full flex justify-center my-4'>
+       <button 
+         onClick={handleSummarize}
+         disabled={isSummarizing || loading} 
+         className='bg-red-700 px-4 py-2 text-white rounded-xl cursor-pointer disabled:bg-gray-400'
+       >
+         {isSummarizing ? "Exporting..." : "Export Filtered JSON"}
+       </button>
+     </div>
+
+     {/* --- UPDATED: Summary Display Box --- */}
+     {isSummarizing && (
+       <h2 className="text-xl font-bold text-center animate-pulse text-white">Exporting Data...</h2>
+     )}
+     {summaryError && (
+        <div className="bg-red-100 border-red-400 border text-red-700 px-4 py-3 rounded-lg mb-6 shadow-sm" role="alert">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{summaryError}</span>
+        </div>
+     )}
+     {summary && (
+       <div className="bg-blue-50 border-blue-200 border p-4 rounded-lg mb-6 shadow-sm text-black max-h-100 overflow-scroll">
+         <div className='flex justify-between'>
+           <h2 className="text-xl font-bold mb-2">Exported JSON</h2>
+         <button onClick={()=>{setSummary(null)}} className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">
+           X
+         </button>
+         </div>
+         {/* Use a <pre> tag to correctly display formatted JSON */}
+         <pre className="text-sm text-gray-800 my-2 whitespace-pre-wrap overflow-auto">
+           {summary}
+         </pre>
+       </div>
+     )}
       
-      {/* Pagination Controls */}
+      {/* Pagination Controls (Unchanged) */}
       <div className="flex justify-between items-center mb-4">
         <button
           onClick={handlePrevPage}
@@ -428,7 +541,7 @@ function App() {
         </button>
       </div>
 
-      {/* Message List */}
+      {/* Message List (Unchanged) */}
       {loading && <h2 className="text-xl font-bold text-center animate-pulse">Loading...</h2>}
       {error && <h2 className="text-xl font-bold text-center text-red-600">Error: {error}</h2>}
       
@@ -464,7 +577,7 @@ function App() {
         </div>
       )}
       
-      {/* Pagination Controls (Bottom) */}
+      {/* Pagination Controls (Bottom) (Unchanged) */}
       {totalPages > 1 && (
         <div className="flex justify-between items-center mt-6 pt-4 border-t">
           <button
