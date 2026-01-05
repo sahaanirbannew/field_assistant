@@ -63,13 +63,13 @@ app = FastAPI(
 )
 
 # --- CORS Configuration ---
-origins = ["*"] # Allow all origins for simplicity
+origins = ["*", "http://localhost:9000", "https://localhost:9000"] # Allow all origins for simplicity
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*", "GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["*", "Content-Type", "Authorization"],
 )
 
 # --- Database Dependency ---
