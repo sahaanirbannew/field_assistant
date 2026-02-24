@@ -562,6 +562,11 @@ function App() {
                   {new Date(msg.timestamp).toLocaleString()}
                 </span>
               </div>
+              {msg.survey_question && (
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-2 mb-2 rounded-r-md text-sm text-blue-800 italic">
+                  <strong>Q: </strong> {msg.survey_question}
+                </div>
+              )}
               {msg.text && (
                 <p className="text-base text-gray-800 my-2 whitespace-pre-wrap">{msg.text}</p>
               )}

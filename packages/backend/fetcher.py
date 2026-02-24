@@ -39,6 +39,12 @@ s3_client = boto3.client(
     aws_access_key_id=S3_ACCESS_KEY_ID,
     aws_secret_access_key=S3_SECRET_ACCESS_KEY
 )
+# --- Question Bank for FSM (can be expanded later) ---
+QUESTION_BANK = [
+    "Where are you going?", 
+    "Who is the local guide?", 
+    "What's the target species?"
+]
 
 # ---------------- DB helpers (specific to fetcher) ----------------
 
@@ -75,17 +81,18 @@ def upsert_user(conn, user_obj):
     conn.commit()
     return uid
 
-def insert_message(conn, update_id, msg: Message, user_id):
+def insert_message(conn, update_id, msg: Message, user_id, survey_question=None):
     with conn.cursor() as cur:
         ts = msg.date if msg.date else datetime.now(timezone.utc)
         cur.execute(
-            "INSERT INTO messages (telegram_message_id, update_id, user_id, chat_id, text, timestamp, raw_json) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            "INSERT INTO messages (telegram_message_id, update_id, user_id, chat_id, text, survey_question, timestamp, raw_json) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
             (
                 msg.message_id,
                 update_id,
                 user_id,
                 msg.chat.id if msg.chat else None,
                 msg.text or msg.caption,
+                survey_question, # Added column
                 ts,
                 psycopg2.extras.Json(msg.to_dict())
             )
@@ -143,7 +150,52 @@ async def process_update(conn, update_obj, bot: Bot):
     if not from_user: return
 
     user_id_db = upsert_user(conn, from_user)
-    message_db_id = insert_message(conn, update_id, msg, user_id_db)
+    
+    # 1. Check FSM State BEFORE saving the message
+    with conn.cursor() as cur:
+        cur.execute("SELECT current_state, current_step, answers FROM user_states WHERE user_id = %s", (user_id_db,))
+        state_row = cur.fetchone()
+        
+    current_question_context = None
+    text = msg.text or msg.caption or ""
+
+    # 2. Command Interception
+    if text.strip() == "/start_trip":
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO user_states (user_id, current_state, current_step, answers) 
+                VALUES (%s, 'survey_active', 0, '[]'::jsonb)
+                ON CONFLICT (user_id) DO UPDATE SET current_state = 'survey_active', current_step = 0, answers = '[]'::jsonb
+            """, (user_id_db,))
+            conn.commit()
+        await bot.send_message(chat_id=msg.chat.id, text=f"Question 1: {QUESTION_BANK[0]}")
+        insert_message(conn, update_id, msg, user_id_db, survey_question=None)
+        return 
+
+    # 3. Answer Processing
+    if state_row and state_row[0] == 'survey_active':
+        current_step = state_row[1]
+        answers = state_row[2] or []
+        
+        # Context for the DB save
+        current_question_context = QUESTION_BANK[current_step]
+        answers.append(text)
+        next_step = current_step + 1
+
+        with conn.cursor() as cur:
+            if next_step < len(QUESTION_BANK):
+                cur.execute("UPDATE user_states SET current_step = %s, answers = %s::jsonb WHERE user_id = %s", 
+                            (next_step, psycopg2.extras.Json(answers), user_id_db))
+                conn.commit()
+                await bot.send_message(chat_id=msg.chat.id, text=f"Question {next_step + 1}: {QUESTION_BANK[next_step]}")
+            else:
+                cur.execute("UPDATE user_states SET current_state = NULL, current_step = 0 WHERE user_id = %s", (user_id_db,))
+                conn.commit()
+                summary = "\n".join([f"Q: {q}\nA: {a}" for q, a in zip(QUESTION_BANK, answers)])
+                await bot.send_message(chat_id=msg.chat.id, text=f"Survey Complete! Here is your summary:\n\n{summary}")
+
+    # 4. Standard Archiving (With Context)
+    message_db_id = insert_message(conn, update_id, msg, user_id_db, survey_question=current_question_context)
 
     # Location
     if msg.location:

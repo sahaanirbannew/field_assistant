@@ -157,7 +157,7 @@ def get_all_messages(
         main_query = f"""
             SELECT 
                 m.id, m.telegram_message_id, m.update_id, m.user_id, 
-                m.chat_id, m.text, m.timestamp, m.raw_json,
+                m.chat_id, m.text, m.survey_question, m.timestamp, m.raw_json,
                 to_jsonb(u) as user,
                 COALESCE(
                     (SELECT jsonb_agg(med.* ORDER BY med.id) FROM media med WHERE med.message_id = m.id), 

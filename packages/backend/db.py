@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS last_update (
   id SMALLINT PRIMARY KEY DEFAULT 1,
   last_update_id BIGINT
 );
+
+-- FSM Memory Table
+CREATE TABLE IF NOT EXISTS user_states (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  current_state TEXT,
+  current_step INTEGER DEFAULT 0,
+  answers JSONB DEFAULT '[]'::jsonb
+);
+
 """
 
 # --- Database Helper Functions ---
@@ -80,6 +89,7 @@ def init_db():
         with conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
             # ensure tracker row exists
+            cur.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS survey_question TEXT;")
             cur.execute("INSERT INTO last_update (id, last_update_id) VALUES (1, NULL) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
         print("Database tables initialized successfully.")

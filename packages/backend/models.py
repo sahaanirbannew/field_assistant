@@ -39,6 +39,7 @@ class Message(OrmBaseModel):
     user_id: Optional[int] = None
     chat_id: int
     text: Optional[str] = None
+    survey_question: Optional[str] = None
     timestamp: datetime
     raw_json: Optional[Any] = None 
 
