@@ -53,7 +53,7 @@ if GOOGLE_API_KEY:
 else:
     print("Warning: GOOGLE_API_KEY not set. AI features will be disabled.")
 
-vision_model = genai.GenerativeModel("gemini-2.5-flash-preview-09-2025")
+vision_model = genai.GenerativeModel("gemini-2.5-flash")
 
 # --- App Initialization ---
 app = FastAPI(
